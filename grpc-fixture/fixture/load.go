@@ -14,6 +14,7 @@ type fixture map[string]*messageTree
 type messageTree struct {
 	origin       internal.MessageOrigin
 	raw          string
+	called		 bool
 	nextMessages []*messageTree
 }
 

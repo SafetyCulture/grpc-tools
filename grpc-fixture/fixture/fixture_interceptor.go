@@ -46,7 +46,8 @@ func (f fixture) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.Str
 			}
 			var found bool
 			for _, message := range messageTreeNode.nextMessages {
-				if message.origin == internal.ClientMessage && message.raw == string(receivedMessage) {
+				if message.origin == internal.ClientMessage && message.called != true {
+					message.called = true
 					// found the matching message so recurse deeper into the tree
 					messageTreeNode = message
 					found = true
