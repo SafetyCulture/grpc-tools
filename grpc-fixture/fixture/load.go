@@ -15,6 +15,7 @@ type messageTree struct {
 	origin       internal.MessageOrigin
 	raw          string
 	called		 bool
+	parent		 *messageTree
 	nextMessages []*messageTree
 }
 
