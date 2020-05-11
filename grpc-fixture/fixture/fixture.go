@@ -3,6 +3,7 @@ package fixture
 import (
 	"github.com/bradleyjkemp/grpc-tools/grpc-proxy"
 	"github.com/bradleyjkemp/grpc-tools/internal/proto_decoder"
+	"github.com/sirupsen/logrus"
 	"strings"
 )
 
@@ -25,7 +26,9 @@ func Run(protoRoots, protoDescriptors, dumpPath string, proxyConfig ...grpc_prox
 	}
 	encoder := proto_decoder.NewEncoder(resolvers...)
 
-	interceptor, err := loadFixture(dumpPath, encoder)
+	logger := logrus.New()
+	decoder := proto_decoder.NewDecoder(logger, resolvers...)
+	interceptor, err := loadFixture(dumpPath, encoder, decoder)
 	if err != nil {
 		return err
 	}
