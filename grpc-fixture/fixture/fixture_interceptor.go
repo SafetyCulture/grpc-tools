@@ -77,14 +77,18 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 			var receivedMessage []byte
 			if unprocessedReceivedMessage == nil {
 				err := ss.RecvMsg(&receivedMessage)
-				unprocessedReceivedMessage = receivedMessage
-				receivedMessageStructure := internal.Message{
-					MessageOrigin: internal.ClientMessage,
-					RawMessage:    receivedMessage,
-					Message:       nil,
-					Timestamp:     time.Time{},
+				if err != nil {
+					return err
 				}
+				unprocessedReceivedMessage = receivedMessage
+
 				if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
+					receivedMessageStructure := internal.Message{
+						MessageOrigin: internal.ClientMessage,
+						RawMessage:    receivedMessage,
+						Message:       nil,
+						Timestamp:     time.Time{},
+					}
 					receivedMessageDecoded, decodeErr := f.decoder.Decode(info.FullMethod, &receivedMessageStructure)
 					if receivedMessageDecoded == nil {
 						return nil
@@ -94,9 +98,6 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 					}
 					//Don't have access to values, this is why use split
 					actionId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
-				}
-				if err != nil {
-					return err
 				}
 			}
 
