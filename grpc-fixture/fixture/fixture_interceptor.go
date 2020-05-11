@@ -12,6 +12,7 @@ import (
 // fixtureInterceptor implements a gRPC.StreamingServerInterceptor that replays saved responses
 func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, _ grpc.StreamHandler) error {
 	messageTreeNode := f.fixture[info.FullMethod]
+	var actionId = ""
 	var unprocessedReceivedMessage []byte
 	if messageTreeNode == nil {
 		return status.Error(codes.Unavailable, "no saved responses found for method "+info.FullMethod)
@@ -31,21 +32,32 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 					if message.called == false {
 						hasUncalled = true
 					}
+					msgBytes := message.message.RawMessage
 					if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
-						msgBytes, encodeErr := f.encoder.Encode(info.FullMethod, message.message)
+						//Override the action ID from dump on ID that's coming from client
+						level1Nesting, ok := message.message.Message.(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						actionMap, ok := level1Nesting["action"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap, ok := actionMap["task"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap["taskId"] = actionId
+
+						encodeErr := error(nil)
+						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
 						if encodeErr != nil {
 							return encodeErr
 						}
-						sendMsgErr := ss.SendMsg(msgBytes)
-						if sendMsgErr != nil {
-							return sendMsgErr
-						}
-					} else {
-						msgBytes := message.message.RawMessage
-						sendMsgErr := ss.SendMsg(msgBytes)
-						if sendMsgErr != nil {
-							return sendMsgErr
-						}
+					}
+					sendMsgErr := ss.SendMsg(msgBytes)
+					if sendMsgErr != nil {
+						return sendMsgErr
 					}
 					// recurse deeper into the tree
 					message.called = true
@@ -80,10 +92,8 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 					if decodeErr != nil {
 						return decodeErr
 					}
-					test := messageTreeNode.nextMessages[0].nextMessages[0].message.Message.(map[string]interface{})
-					test2 := test["action"].(map[string]interface{})
-					test3 := test2["task"].(map[string]interface{})
-					test3["taskId"] = strings.Split(receivedMessageDecoded.String(), "\"")[1]
+					//Don't have access to values, this is why use split
+					actionId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
 				}
 				if err != nil {
 					return err
