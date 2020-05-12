@@ -90,9 +90,6 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 						Timestamp:     time.Time{},
 					}
 					receivedMessageDecoded, decodeErr := f.decoder.Decode(info.FullMethod, &receivedMessageStructure)
-					if receivedMessageDecoded == nil {
-						return nil
-					}
 					if decodeErr != nil {
 						return decodeErr
 					}
