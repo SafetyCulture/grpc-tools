@@ -57,7 +57,7 @@ func loadFixture(dumpPath string, encoder proto_decoder.MessageEncoder, decoder 
 			}
 			var foundExisting *messageTree
 			for _, nextMessage := range messageTreeNode.nextMessages {
-				if nextMessage.message.MessageOrigin == msg.MessageOrigin && bytes.Compare(msgBytes, msg.RawMessage) == 0 {
+				if nextMessage.message.MessageOrigin == msg.MessageOrigin && bytes.Compare(msgBytes, nextMessage.message.RawMessage) == 0 {
 					foundExisting = nextMessage
 					break
 				}
