@@ -5,11 +5,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"strings"
+	"time"
 )
 
 // fixtureInterceptor implements a gRPC.StreamingServerInterceptor that replays saved responses
-func (f fixture) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, _ grpc.StreamHandler) error {
-	messageTreeNode := f[info.FullMethod]
+func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, _ grpc.StreamHandler) error {
+	messageTreeNode := f.fixture[info.FullMethod]
+	var actionId = ""
 	var unprocessedReceivedMessage []byte
 	if messageTreeNode == nil {
 		return status.Error(codes.Unavailable, "no saved responses found for method "+info.FullMethod)
@@ -19,21 +22,43 @@ func (f fixture) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.Str
 		// possibility that server sends the first method
 		serverFirst := len(messageTreeNode.nextMessages) > 0
 		for _, message := range messageTreeNode.nextMessages {
-			serverFirst = serverFirst && message.origin == internal.ServerMessage
+			serverFirst = serverFirst && message.message.MessageOrigin == internal.ServerMessage
 		}
 
 		if serverFirst {
 			var hasUncalled bool
 			for _, message := range messageTreeNode.nextMessages {
-				if message.origin == internal.ServerMessage && message.called != true {
+				if message.message.MessageOrigin == internal.ServerMessage && message.called != true {
 					if message.called == false {
 						hasUncalled = true
 					}
-					err := ss.SendMsg([]byte(message.raw))
-					if err != nil {
-						return err
-					}
+					msgBytes := message.message.RawMessage
+					if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
+						//Override the action ID from dump on ID that's coming from client
+						level1Nesting, ok := message.message.Message.(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						actionMap, ok := level1Nesting["action"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap, ok := actionMap["task"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap["taskId"] = actionId
 
+						encodeErr := error(nil)
+						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
+						if encodeErr != nil {
+							return encodeErr
+						}
+					}
+					sendMsgErr := ss.SendMsg(msgBytes)
+					if sendMsgErr != nil {
+						return sendMsgErr
+					}
 					// recurse deeper into the tree
 					message.called = true
 					unprocessedReceivedMessage = nil
@@ -52,15 +77,30 @@ func (f fixture) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.Str
 			var receivedMessage []byte
 			if unprocessedReceivedMessage == nil {
 				err := ss.RecvMsg(&receivedMessage)
-				unprocessedReceivedMessage = receivedMessage
 				if err != nil {
 					return err
+				}
+				unprocessedReceivedMessage = receivedMessage
+
+				if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
+					receivedMessageStructure := internal.Message{
+						MessageOrigin: internal.ClientMessage,
+						RawMessage:    receivedMessage,
+						Message:       nil,
+						Timestamp:     time.Time{},
+					}
+					receivedMessageDecoded, decodeErr := f.decoder.Decode(info.FullMethod, &receivedMessageStructure)
+					if decodeErr != nil {
+						return decodeErr
+					}
+					//Don't have access to values, this is why use split
+					actionId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
 				}
 			}
 
 			var found bool
 			for _, message := range messageTreeNode.nextMessages {
-				if message.origin == internal.ClientMessage && message.called != true {
+				if message.message.MessageOrigin == internal.ClientMessage && message.called != true {
 					// found the matching message so recurse deeper into the tree
 					message.parent = messageTreeNode
 					messageTreeNode = message
