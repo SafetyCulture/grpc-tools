@@ -1,5 +1,7 @@
 module github.com/bradleyjkemp/grpc-tools
 
+go 1.14
+
 require (
 	github.com/bradleyjkemp/cupaloy/v2 v2.5.0
 	github.com/golang/protobuf v1.3.2
