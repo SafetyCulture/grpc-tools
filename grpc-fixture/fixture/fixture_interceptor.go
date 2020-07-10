@@ -1,18 +1,19 @@
 package fixture
 
 import (
+	"strings"
+	"time"
+
 	"github.com/bradleyjkemp/grpc-tools/internal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"strings"
-	"time"
 )
 
 // fixtureInterceptor implements a gRPC.StreamingServerInterceptor that replays saved responses
 func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, _ grpc.StreamHandler) error {
 	messageTreeNode := f.fixture[info.FullMethod]
-	var actionId = ""
+	var taskId = ""
 	if messageTreeNode == nil {
 		return status.Error(codes.Unavailable, "no saved responses found for method "+info.FullMethod)
 	}
@@ -36,7 +37,28 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 						if !ok {
 							return nil
 						}
-						taskMap["taskId"] = actionId
+						taskMap["taskId"] = taskId
+
+						encodeErr := error(nil)
+						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
+						if encodeErr != nil {
+							return encodeErr
+						}
+					}
+					if info.FullMethod == "/s12.tasks.v1.IncidentsService/GetIncident" {
+						level1Nesting, ok := message.message.Message.(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						incidentMap, ok := level1Nesting["incident"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap, ok := incidentMap["task"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap["taskId"] = taskId
 
 						encodeErr := error(nil)
 						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
@@ -77,7 +99,21 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 							return decodeErr
 						}
 						//Don't have access to values, this is why use split
-						actionId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
+						taskId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
+					}
+					if info.FullMethod == "/s12.tasks.v1.IncidentsService/GetIncident" {
+						receivedMessageStructure := internal.Message{
+							MessageOrigin: internal.ClientMessage,
+							RawMessage:    receivedMessage,
+							Message:       nil,
+							Timestamp:     time.Time{},
+						}
+						receivedMessageDecoded, decodeErr := f.decoder.Decode(info.FullMethod, &receivedMessageStructure)
+						if decodeErr != nil {
+							return decodeErr
+						}
+						//Don't have access to values, this is why use split
+						taskId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
 					}
 					// found the matching message so recurse deeper into the tree
 					message.called = true
