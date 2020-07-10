@@ -101,6 +101,20 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 						//Don't have access to values, this is why use split
 						taskId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
 					}
+					if info.FullMethod == "/s12.tasks.v1.IncidentsService/GetIncident" {
+						receivedMessageStructure := internal.Message{
+							MessageOrigin: internal.ClientMessage,
+							RawMessage:    receivedMessage,
+							Message:       nil,
+							Timestamp:     time.Time{},
+						}
+						receivedMessageDecoded, decodeErr := f.decoder.Decode(info.FullMethod, &receivedMessageStructure)
+						if decodeErr != nil {
+							return decodeErr
+						}
+						//Don't have access to values, this is why use split
+						taskId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
+					}
 					// found the matching message so recurse deeper into the tree
 					message.called = true
 					messageTreeNode = message
