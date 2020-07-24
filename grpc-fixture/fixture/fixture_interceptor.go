@@ -96,7 +96,6 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 
 						// recurse deeper into the tree
 						message.called = true
-						gc.ChangeState(true)
 						messageTreeNode = message
 						if len(messageTreeNode.nextMessages) == 0 {
 							messageTreeNode.called = true
@@ -112,6 +111,8 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 						if err != nil {
 							return err
 						}
+						gc.ChangeState(false)
+
 						if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
 							receivedMessageStructure := internal.Message{
 								MessageOrigin: internal.ClientMessage,
