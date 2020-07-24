@@ -18,11 +18,16 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 		return status.Error(codes.Unavailable, "no saved responses found for method "+info.FullMethod)
 	}
 
+	globalCalled := false
 	for {
-		for _, message := range messageTreeNode.nextMessages {
-			if message.called != true {
+		if !globalCalled {
+			for _, message := range messageTreeNode.nextMessages {
 				if message.message.MessageOrigin == internal.ServerMessage {
-					msgBytes := message.message.RawMessage
+					var (
+						msgBytes = message.message.RawMessage
+						err      error
+					)
+
 					if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
 						//Override the action ID from dump on ID that's coming from client
 						level1Nesting, ok := message.message.Message.(map[string]interface{})
@@ -39,10 +44,9 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 						}
 						taskMap["taskId"] = taskId
 
-						encodeErr := error(nil)
-						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
-						if encodeErr != nil {
-							return encodeErr
+						msgBytes, err = f.encoder.Encode(info.FullMethod, message.message)
+						if err != nil {
+							return err
 						}
 					}
 					if info.FullMethod == "/s12.tasks.v1.IncidentsService/GetIncident" {
@@ -60,18 +64,16 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 						}
 						taskMap["taskId"] = taskId
 
-						encodeErr := error(nil)
-						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
-						if encodeErr != nil {
-							return encodeErr
+						msgBytes, err = f.encoder.Encode(info.FullMethod, message.message)
+						if err != nil {
+							return err
 						}
 					}
 					sendMsgErr := ss.SendMsg(msgBytes)
 					if sendMsgErr != nil {
 						return sendMsgErr
 					}
-					// recurse deeper into the tree
-					message.called = true
+					globalCalled = true
 					messageTreeNode = message
 					if len(messageTreeNode.nextMessages) == 0 {
 						messageTreeNode.called = true
@@ -116,11 +118,12 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 						taskId = strings.Split(receivedMessageDecoded.String(), "\"")[1]
 					}
 					// found the matching message so recurse deeper into the tree
-					message.called = true
+					globalCalled = true
 					messageTreeNode = message
 					break
 				}
 			}
 		}
+		globalCalled = false
 	}
 }
