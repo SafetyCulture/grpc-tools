@@ -124,6 +124,5 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 				}
 			}
 		}
-		globalCalled = false
 	}
 }
