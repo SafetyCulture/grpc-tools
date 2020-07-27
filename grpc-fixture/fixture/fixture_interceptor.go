@@ -1,6 +1,8 @@
 package fixture
 
 import (
+	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 
 // fixtureInterceptor implements a gRPC.StreamingServerInterceptor that replays saved responses
 func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, _ grpc.StreamHandler) error {
+	log.Print("intercept for " + info.FullMethod)
 	messageTreeNode := f.fixture[info.FullMethod]
 	var taskId = ""
 	if messageTreeNode == nil {
@@ -20,73 +23,19 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 
 	for {
 		for _, message := range messageTreeNode.nextMessages {
-			if message.called != true {
-				if message.message.MessageOrigin == internal.ServerMessage {
-					msgBytes := message.message.RawMessage
-					if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
-						//Override the action ID from dump on ID that's coming from client
-						level1Nesting, ok := message.message.Message.(map[string]interface{})
-						if !ok {
-							return nil
-						}
-						actionMap, ok := level1Nesting["action"].(map[string]interface{})
-						if !ok {
-							return nil
-						}
-						taskMap, ok := actionMap["task"].(map[string]interface{})
-						if !ok {
-							return nil
-						}
-						taskMap["taskId"] = taskId
-
-						encodeErr := error(nil)
-						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
-						if encodeErr != nil {
-							return encodeErr
-						}
-					}
-					if info.FullMethod == "/s12.tasks.v1.IncidentsService/GetIncident" {
-						level1Nesting, ok := message.message.Message.(map[string]interface{})
-						if !ok {
-							return nil
-						}
-						incidentMap, ok := level1Nesting["incident"].(map[string]interface{})
-						if !ok {
-							return nil
-						}
-						taskMap, ok := incidentMap["task"].(map[string]interface{})
-						if !ok {
-							return nil
-						}
-						taskMap["taskId"] = taskId
-
-						encodeErr := error(nil)
-						msgBytes, encodeErr = f.encoder.Encode(info.FullMethod, message.message)
-						if encodeErr != nil {
-							return encodeErr
-						}
-					}
-					sendMsgErr := ss.SendMsg(msgBytes)
-					if sendMsgErr != nil {
-						return sendMsgErr
-					}
-					// recurse deeper into the tree
-					message.called = true
-					messageTreeNode = message
-					if len(messageTreeNode.nextMessages) == 0 {
-						messageTreeNode.called = true
-						// end of the exchange
-						return nil
-					}
-					// found the first server message so break
-					break
-				} else {
+			log.Print("Process message " + info.FullMethod)
+			log.Print("message call status: " + fmt.Sprintf("%t", message.called))
+			if !message.called {
+				if message.message.MessageOrigin == internal.ClientMessage {
+					log.Print("Process Client message " + info.FullMethod)
 					// wait for a client message and then proceed based on its contents
 					var receivedMessage []byte
 					err := ss.RecvMsg(&receivedMessage)
 					if err != nil {
+						log.Print("Error to process Client request " + info.FullMethod)
 						return err
 					}
+
 					if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
 						receivedMessageStructure := internal.Message{
 							MessageOrigin: internal.ClientMessage,
@@ -118,8 +67,71 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 					// found the matching message so recurse deeper into the tree
 					message.called = true
 					messageTreeNode = message
-					break
+				} else {
+					var (
+						msgBytes = message.message.RawMessage
+						err      error
+					)
+					log.Print("Process Server message " + info.FullMethod)
+
+					if info.FullMethod == "/s12.tasks.v1.ActionsService/GetAction" {
+						//Override the action ID from dump on ID that's coming from client
+						level1Nesting, ok := message.message.Message.(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						actionMap, ok := level1Nesting["action"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap, ok := actionMap["task"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap["taskId"] = taskId
+
+						msgBytes, err = f.encoder.Encode(info.FullMethod, message.message)
+						if err != nil {
+							return err
+						}
+					}
+					if info.FullMethod == "/s12.tasks.v1.IncidentsService/GetIncident" {
+						level1Nesting, ok := message.message.Message.(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						incidentMap, ok := level1Nesting["incident"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap, ok := incidentMap["task"].(map[string]interface{})
+						if !ok {
+							return nil
+						}
+						taskMap["taskId"] = taskId
+
+						msgBytes, err = f.encoder.Encode(info.FullMethod, message.message)
+						if err != nil {
+							return err
+						}
+					}
+					log.Print("Server response for " + info.FullMethod)
+					message.called = true
+					sendMsgErr := ss.SendMsg(msgBytes)
+					//gc.ChangeState(false)
+					if sendMsgErr != nil {
+						return sendMsgErr
+					}
 				}
+				//recurse deeper into the tree
+				messageTreeNode = message
+				if len(messageTreeNode.nextMessages) == 0 {
+					messageTreeNode.called = true
+					// end of the exchange
+					return nil
+				}
+				// found the first server message so break
+				break
 			}
 		}
 	}
