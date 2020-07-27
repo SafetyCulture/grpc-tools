@@ -1,7 +1,6 @@
 package fixture
 
 import (
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -18,14 +17,16 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 	messageTreeNode := f.fixture[info.FullMethod]
 	var taskId = ""
 	if messageTreeNode == nil {
+		log.Print("ERROR - No saved responses found for method "+info.FullMethod)
 		return status.Error(codes.Unavailable, "no saved responses found for method "+info.FullMethod)
 	}
 
 	for {
+		var clientOrServerWasCalled  = false
 		for _, message := range messageTreeNode.nextMessages {
 			log.Print("Process message " + info.FullMethod)
-			log.Print("message call status: " + fmt.Sprintf("%t", message.called))
 			if !message.called {
+				clientOrServerWasCalled = true
 				if message.message.MessageOrigin == internal.ClientMessage {
 					log.Print("Process Client message " + info.FullMethod)
 					// wait for a client message and then proceed based on its contents
@@ -133,6 +134,10 @@ func (f fixtureStruct) intercept(srv interface{}, ss grpc.ServerStream, info *gr
 				// found the first server message so break
 				break
 			}
+		}
+		if !clientOrServerWasCalled {
+			log.Print("ERROR - No saved NOT Called responses found for method "+info.FullMethod)
+			return status.Error(codes.Unavailable, "no saved NOT Called responses found for method "+info.FullMethod)
 		}
 	}
 }
