@@ -6,10 +6,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"sync"
 )
 
 type grpcWebServer interface {
@@ -17,7 +19,27 @@ type grpcWebServer interface {
 	IsGrpcWebRequest(req *http.Request) bool
 }
 
+type CalledState struct {
+	globalCalled bool
+	mux          sync.Mutex
+}
+
+func (locker *CalledState) ChangeState(newState bool) {
+	locker.mux.Lock()
+	locker.globalCalled = newState
+	locker.mux.Unlock()
+}
+
+func (locker *CalledState) CheckState() bool {
+	locker.mux.Lock()
+	defer locker.mux.Unlock()
+	return locker.globalCalled
+}
+
 func newHttpServer(logger logrus.FieldLogger, grpcHandler grpcWebServer, internalRedirect func(net.Conn, string), reverseProxy http.Handler) *http.Server {
+	gc := CalledState{
+		globalCalled: false,
+	}
 	return &http.Server{
 		Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
@@ -25,6 +47,14 @@ func newHttpServer(logger logrus.FieldLogger, grpcHandler grpcWebServer, interna
 				logger.Debug("Handling HTTP CONNECT request for destination ", r.URL)
 				handleConnect(w, r, internalRedirect)
 			case isGrpcRequest(grpcHandler, r):
+				for {
+					if !gc.CheckState() {
+						gc.ChangeState(true)
+						break
+					}
+					log.Print("Wait for finish previous request.")
+				}
+
 				logger.Debug("Handling gRPC request ", r.URL)
 				// This request may be a gRPC-Web request that came in on HTTP/1.X
 				// So delete any legacy headers that will cause gRPC to break
@@ -34,6 +64,8 @@ func newHttpServer(logger logrus.FieldLogger, grpcHandler grpcWebServer, interna
 				r.Header.Del("Connection")
 				r.Header.Del("Proxy-Connection")
 				grpcHandler.ServeHTTP(w, r)
+				log.Print("Finished Handling gRPC request ")
+				gc.ChangeState(false)
 			default:
 				// Many clients use a mix of gRPC and non-gRPC requests
 				// so must try to be as transparent as possible for normal
