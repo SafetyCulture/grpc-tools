@@ -5,6 +5,7 @@ import (
 	"github.com/bradleyjkemp/grpc-tools/internal"
 	"github.com/bradleyjkemp/grpc-tools/internal/proto_decoder"
 	"io"
+	"log"
 	"os"
 )
 
@@ -22,6 +23,7 @@ type messageTree struct {
 
 // load fixture creates a Trie-like structure of messages
 func loadFixture(dumpPath string, encoder proto_decoder.MessageEncoder, decoder proto_decoder.MessageDecoder) (*fixtureStruct, error) {
+	log.Print("Load data for dump: "+ dumpPath)
 	dumpFile, err := os.Open(dumpPath)
 	if err != nil {
 		return nil, err

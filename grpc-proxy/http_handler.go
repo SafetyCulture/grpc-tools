@@ -47,12 +47,16 @@ func newHttpServer(logger logrus.FieldLogger, grpcHandler grpcWebServer, interna
 				logger.Debug("Handling HTTP CONNECT request for destination ", r.URL)
 				handleConnect(w, r, internalRedirect)
 			case isGrpcRequest(grpcHandler, r):
+				var loggedWaitStatus  = false
 				for {
 					if !gc.CheckState() {
 						gc.ChangeState(true)
 						break
 					}
-					log.Print("Wait for finish previous request.")
+					if !loggedWaitStatus {
+						loggedWaitStatus = true
+						log.Print("Wait for finish previous request.")
+					}
 				}
 
 				logger.Debug("Handling gRPC request ", r.URL)
